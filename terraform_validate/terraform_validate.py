@@ -436,6 +436,7 @@ class Validator:
         if type(path) is not dict:
             if path is not None:
                 self.terraform_config = self.parse_terraform_directory(path)
+                self.terraform_tfvars = self.parse_terraform_tfvars(path)
         else:
             self.terraform_config = path
 
@@ -475,6 +476,26 @@ class Validator:
         terraform = hcl.loads(terraform_string)
         return terraform
 
+    def parse_terraform_tfvars(self, path):
+        tfvars = {}
+        for directory, subdirectories, files in os.walk(path):
+            for file in files:
+                if file.endswith(".tfvars"):
+                    with open(os.path.join(directory, file)) as fp:
+                        try:
+                            # new_terraform = fp.read()
+                            tmp = hcl.load(fp)
+                        except ValueError as e:
+                            raise TerraformSyntaxException(
+                                "Invalid terraform configuration in {0}\n{1}".format(os.path.join(directory, file), e))
+                        tfvars = self.merge_two_dicts(tmp, tfvars)
+        return tfvars
+
+    def merge_two_dicts(self, x, y):
+        z = x.copy()  # start with x's keys and values
+        z.update(y)  # modifies z with y's keys and values & returns None
+        return z
+
     def get_terraform_resources(self, name, resources):
         if name not in resources.keys():
             return []
@@ -498,6 +519,8 @@ class Validator:
     def get_terraform_variable_value(self,variable):
         if ('variable' not in self.terraform_config.keys()) or (variable not in self.terraform_config['variable'].keys()):
             raise TerraformVariableException("There is no Terraform variable '{0}'".format(variable))
+        if variable in self.terraform_tfvars:
+            return self.terraform_tfvars.get(variable)
         if 'default' not in self.terraform_config['variable'][variable].keys():
             return None
         return self.terraform_config['variable'][variable]['default']
